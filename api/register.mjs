@@ -31,16 +31,13 @@ export default async function handler(req, res) {
 
   let browser;
 
-  try {
-    // Get chromium executable path for serverless environment
-    // Note: @sparticuz/chromium only works on Linux (Vercel serverless)
-    // For local development on macOS, use 'vercel dev' or test on Vercel directly
+  try {// Get chromium executable path for Vercel serverless environment
     const executablePath = await chromium.executablePath();
 
     // Launch browser with @sparticuz/chromium
-    // @sparticuz/chromium is optimized for serverless environments
+    // @sparticuz/chromium is optimized for AWS Lambda/Vercel serverless environments
     browser = await playwright.chromium.launch({
-      args: [...chromium.args, '--disable-gpu', '--disable-dev-shm-usage'],
+      args: chromium.args,
       executablePath,
       headless: true,
     });
