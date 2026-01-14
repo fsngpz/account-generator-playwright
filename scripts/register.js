@@ -81,12 +81,51 @@ async function run() {
     // 4. Submit the form
     await page.click('input[type="submit"]');
 
-    // 5. Wait for confirmation – this may be a redirect or a success message.
-    // You will probably want to replace this with something more specific,
-    // for example a selector that only appears after successful registration.
-    await page.waitForLoadState('networkidle');
+    // 5. Wait for the specific API call after registration.
+    // We wait for the `getUserProfile` call and then inspect it for a token.
+    const profileResponse = await page.waitForResponse(
+      (response) =>
+        response
+          .url()
+          .includes('/payments/profile/getUserProfile') && response.ok(),
+      { timeout: 60_000 },
+    );
 
-    console.log('Registration flow executed. Verify in the browser that it succeeded.');
+    // Inspect request headers (often where an auth token lives)
+    const profileRequest = profileResponse.request();
+    const requestHeaders = profileRequest.headers();
+    const authHeader =
+      requestHeaders.authorization || requestHeaders.Authorization;
+
+    if (authHeader) {
+      console.log(
+        'Authorization header from getUserProfile request:',
+        authHeader,
+      );
+    } else {
+      console.log(
+        'No Authorization header found on getUserProfile request. Here are all request headers:',
+        requestHeaders,
+      );
+    }
+
+    // Inspect response JSON (token may also be returned in the body)
+    try {
+      const body = await profileResponse.json();
+      console.log('getUserProfile response JSON:', body);
+
+      const possibleToken =
+        body?.token || body?.accessToken || body?.authToken || body?.jwt;
+      if (possibleToken) {
+        console.log('Detected token from getUserProfile response:', possibleToken);
+      }
+    } catch (e) {
+      console.warn('Could not parse getUserProfile response as JSON:', e);
+    }
+
+    console.log(
+      'Registration flow executed and getUserProfile call captured. Check console output for token details.',
+    );
   } catch (err) {
     console.error('Registration automation failed:', err);
   } finally {
