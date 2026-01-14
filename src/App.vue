@@ -24,6 +24,34 @@ function validateEmail(value) {
   return /^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$/.test(value)
 }
 
+// Mock mode: Set to true to use mock API for testing Firebase integration
+const USE_MOCK_API = import.meta.env.VITE_USE_MOCK_API === 'true' || import.meta.env.DEV
+
+// Mock registration API response (for testing Firebase integration)
+async function mockRegisterAPI(email) {
+  // Simulate API delay
+  await new Promise(resolve => setTimeout(resolve, 500))
+  
+  return {
+    success: true,
+    emailUsed: email,
+    authHeader: `Bearer mock_token_${Date.now()}`,
+    detectedToken: `mock_access_token_${Date.now()}`,
+    requestHeaders: {
+      'content-type': 'application/json',
+      'authorization': `Bearer mock_token_${Date.now()}`,
+    },
+    responseJson: {
+      id: `mock_user_${Date.now()}`,
+      email: email,
+      firstName: 'John',
+      lastName: 'Doe',
+      token: `mock_access_token_${Date.now()}`,
+    },
+    mock: true, // Flag to indicate this is a mocked response
+  }
+}
+
 // API call to register account
 async function generateAccount() {
   error.value = ''
@@ -38,19 +66,27 @@ async function generateAccount() {
   loading.value = true
   
   try {
-    // Call the registration API
-    const response = await fetch('/api/register', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        email: email.value.trim(),
-      }),
-    })
+    let data
     
-    const data = await response.json()
-    
-    if (!response.ok) {
-      throw new Error(data.error || 'Registration failed')
+    // Use mock API if enabled, otherwise call real API
+    if (USE_MOCK_API) {
+      console.log('Using mock API for registration')
+      data = await mockRegisterAPI(email.value.trim())
+    } else {
+      // Call the registration API
+      const response = await fetch('/api/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: email.value.trim(),
+        }),
+      })
+      
+      data = await response.json()
+      
+      if (!response.ok) {
+        throw new Error(data.error || 'Registration failed')
+      }
     }
     
     registrationResult.value = data

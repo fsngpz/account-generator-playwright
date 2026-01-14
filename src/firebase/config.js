@@ -1,5 +1,6 @@
 import { initializeApp } from 'firebase/app'
 import { getFirestore } from 'firebase/firestore'
+import { getAuth, signInAnonymously } from 'firebase/auth'
 
 // Your web app's Firebase configuration
 // TODO: Replace these values with your Firebase project configuration
@@ -19,4 +20,34 @@ const app = initializeApp(firebaseConfig)
 // Initialize Cloud Firestore and get a reference to the service
 const db = getFirestore(app)
 
-export { db }
+// Initialize Firebase Authentication
+const auth = getAuth(app)
+
+// Initialize anonymous authentication
+let authPromise = null
+const initAuth = async () => {
+  // Return existing promise if auth is already in progress
+  if (authPromise) return authPromise
+  
+  authPromise = (async () => {
+    try {
+      // Check if user is already signed in
+      if (auth.currentUser) {
+        return auth.currentUser
+      }
+      
+      // Sign in anonymously
+      const userCredential = await signInAnonymously(auth)
+      console.log('Signed in anonymously:', userCredential.user.uid)
+      return userCredential.user
+    } catch (error) {
+      console.error('Error signing in anonymously:', error)
+      authPromise = null // Reset on error
+      throw error
+    }
+  })()
+  
+  return authPromise
+}
+
+export { db, auth, initAuth }

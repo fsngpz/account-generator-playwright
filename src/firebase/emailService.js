@@ -1,4 +1,4 @@
-import { db } from './config.js'
+import { db, initAuth } from './config.js'
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore'
 
 /**
@@ -9,7 +9,10 @@ import { collection, addDoc, serverTimestamp } from 'firebase/firestore'
  */
 export async function saveEmailToFirestore(email, additionalData = {}) {
   try {
-    const docRef = await addDoc(collection(db, 'emails'), {
+    // Ensure user is authenticated before writing
+    await initAuth()
+    
+    const docRef = await addDoc(collection(db, 'accounts'), {
       email: email,
       createdAt: serverTimestamp(),
       ...additionalData
