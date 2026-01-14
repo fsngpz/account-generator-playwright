@@ -32,16 +32,17 @@ export default async function handler(req, res) {
   let browser;
 
   try {
-    // Configure chromium for serverless environment
-    chromium.setHeadlessMode(true);
-    chromium.setGraphicsMode(false);
-
+    // Get chromium executable path for serverless environment
+    // Note: @sparticuz/chromium only works on Linux (Vercel serverless)
+    // For local development on macOS, use 'vercel dev' or test on Vercel directly
     const executablePath = await chromium.executablePath();
 
+    // Launch browser with @sparticuz/chromium
+    // @sparticuz/chromium is optimized for serverless environments
     browser = await playwright.chromium.launch({
-      args: chromium.args,
+      args: [...chromium.args, '--disable-gpu', '--disable-dev-shm-usage'],
       executablePath,
-      headless: chromium.headless,
+      headless: true,
     });
 
     const context = await browser.newContext();
@@ -83,10 +84,10 @@ export default async function handler(req, res) {
     await page.fill('input[name="lastName"]', lastName);
     await page.fill('input[name="email"]', email);
     await page.fill('input[name="password"]', password);
-    await page.fill('input[name="confirmPassword"]', password);
+    await page.fill('input[name="password-confirm"]', password);
 
     // 4. Submit the form (update selector if needed)
-    await page.click('button[type="submit"]');
+    await page.click('input[type="submit"]');
 
     // 5. Wait for the specific API call after registration.
     const profileResponse = await page.waitForResponse(
