@@ -1,6 +1,6 @@
 <script setup>
 import { ref, computed } from 'vue'
-import { saveEmailToFirestore } from './firebase/emailService.js'
+import { saveEmailToFirestore, checkEmailExists } from './firebase/emailService.js'
 
 // Form state
 const email = ref('')
@@ -13,15 +13,51 @@ const success = ref('')
 const registrationResult = ref(null)
 const otp = ref('')
 const otpError = ref('')
+const emailError = ref('')
+const checkingEmail = ref(false)
 
 // Computed
 const isFormValid = computed(() => {
-  return validateEmail(email.value)
+  return validateEmail(email.value) && !emailError.value
 })
 
 // Validation
 function validateEmail(value) {
+  if (!value || value.trim() === '') {
+    return false
+  }
   return /^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$/.test(value)
+}
+
+// Check if email already exists in database
+async function validateEmailExists() {
+  emailError.value = ''
+  
+  if (!email.value || email.value.trim() === '') {
+    emailError.value = 'Email cannot be empty'
+    return
+  }
+  
+  if (!validateEmail(email.value)) {
+    emailError.value = 'Please enter a valid email address'
+    return
+  }
+  
+  checkingEmail.value = true
+  
+  try {
+    const exists = await checkEmailExists(email.value.trim())
+    if (exists) {
+      emailError.value = 'This email is already registered'
+    } else {
+      emailError.value = ''
+    }
+  } catch (e) {
+    console.error('Error checking email:', e)
+    // Don't show error to user if check fails, just log it
+  } finally {
+    checkingEmail.value = false
+  }
 }
 
 // Mock mode: Set to true to use mock API for testing Firebase integration
@@ -57,13 +93,35 @@ async function generateAccount() {
   error.value = ''
   success.value = ''
   registrationResult.value = null
+  emailError.value = ''
   
-  if (!isFormValid.value) {
-    error.value = 'Please enter a valid email address.'
+  // Validate email format
+  if (!email.value || email.value.trim() === '') {
+    emailError.value = 'Email cannot be empty'
+    error.value = 'Email cannot be empty'
     return
   }
   
+  if (!validateEmail(email.value)) {
+    emailError.value = 'Please enter a valid email address'
+    error.value = 'Please enter a valid email address'
+    return
+  }
+  
+  // Check if email already exists
   loading.value = true
+  try {
+    const exists = await checkEmailExists(email.value.trim())
+    if (exists) {
+      emailError.value = 'This email is already registered'
+      error.value = 'This email is already registered'
+      loading.value = false
+      return
+    }
+  } catch (e) {
+    console.error('Error checking email:', e)
+    // Continue with registration even if check fails
+  }
   
   try {
     let data
@@ -161,6 +219,7 @@ function resetForm() {
   error.value = ''
   success.value = ''
   otpError.value = ''
+  emailError.value = ''
   registrationResult.value = null
 }
 </script>
@@ -185,11 +244,15 @@ function resetForm() {
               placeholder="Enter your email"
               autocomplete="email"
               required
-              :disabled="loading"
+              :disabled="loading || checkingEmail"
               class="input"
-              :class="{ 'input-error': email && !validateEmail(email) }"
+              :class="{ 'input-error': emailError || (email && !validateEmail(email)) }"
+              @blur="validateEmailExists"
             />
-            <span v-if="email && !validateEmail(email)" class="error-text">
+            <span v-if="emailError" class="error-text">
+              {{ emailError }}
+            </span>
+            <span v-else-if="email && !validateEmail(email)" class="error-text">
               Please enter a valid email address
             </span>
           </div>
