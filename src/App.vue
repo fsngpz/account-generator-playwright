@@ -151,27 +151,47 @@ async function confirmOTP() {
     return
   }
   
+  // Check if we have registration result with token and phone number
+  if (!registrationResult.value || !registrationResult.value.detectedToken) {
+    otpError.value = 'Registration token not found. Please register again.'
+    return
+  }
+  
   loading.value = true
   
   try {
-    // TODO: Replace with actual OTP verification endpoint
-    // For now, we'll simulate OTP confirmation
-    // In a real implementation, you'd call an API like:
-    // const response = await fetch('/api/verify-otp', {
-    //   method: 'POST',
-    //   headers: { 'Content-Type': 'application/json' },
-    //   body: JSON.stringify({
-    //     email: email.value,
-    //     otp: otp.value,
-    //   }),
-    // })
+    const apiUrl = import.meta.env.VITE_API_URL || '/api/verify-otp'
     
-    // Simulate API call
-    await new Promise(resolve => setTimeout(resolve, 1000))
+    const response = await fetch(apiUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        otpCode: otp.value.trim(),
+        phoneNumber: registrationResult.value.phoneNumber || '0401197580',
+        newPhoneNumber: '0409191199', // You can make this configurable later
+        authToken: registrationResult.value.detectedToken,
+      }),
+    })
+    
+    const data = await response.json()
+    
+    if (!response.ok) {
+      throw new Error(data.error || 'OTP verification failed')
+    }
+    
+    if (!data.success) {
+      throw new Error(data.verifyPhoneResponse?.error || 'OTP verification failed')
+    }
     
     // Move to success step
     step.value = 'success'
     success.value = 'Account verified successfully!'
+    
+    // Store verification result
+    registrationResult.value = {
+      ...registrationResult.value,
+      verificationResult: data,
+    }
   } catch (e) {
     otpError.value = e.message || 'Invalid OTP code. Please try again.'
     console.error('OTP verification error:', e)

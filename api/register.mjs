@@ -38,6 +38,7 @@ export default async function handler(req, res) {
     const email =
         body.email || `john.doe+${Date.now()}@example.com`;
     const password = body.password || 'SecurePassword123!';
+    const phoneNumber = body.phoneNumber || '0401197580'; // Default phone number for verification
 
     let browser;
 
@@ -152,21 +153,76 @@ export default async function handler(req, res) {
 
         let responseJson = null;
         let detectedToken = null;
+        let verificationResponse = null;
 
         try {
             responseJson = await profileResponse.json();
-            detectedToken = authHeader.substring("Bearer ".length);
+
+            // Extract token from auth header
+            if (authHeader && authHeader.startsWith('Bearer ')) {
+                detectedToken = authHeader.substring("Bearer ".length);
+            }
         } catch {
             // Response is not JSON; ignore.
         }
 
+        // 6. After account creation, send verification code
+        // This endpoint sends an OTP to the phone number
+        if (detectedToken || authHeader) {
+            try {
+                console.log('Sending verification code to phone:', phoneNumber);
+
+                // Call the sendUserVerificationCode API endpoint
+                const verificationCodeResponse = await page.request.post(
+                    'https://app.pyng.com.au/payments/profile/sendUserVerificationCode',
+                    {
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': authHeader || `Bearer ${detectedToken}`,
+                        },
+                        data: {
+                            phoneNumber: phoneNumber,
+                        },
+                    }
+                );
+
+                if (verificationCodeResponse.ok()) {
+                    try {
+                        verificationResponse = await verificationCodeResponse.json();
+                        console.log('Verification code sent successfully');
+                    } catch {
+                        verificationResponse = {
+                            status: verificationCodeResponse.status(),
+                            message: 'Verification code sent'
+                        };
+                    }
+                } else {
+                    console.warn('Failed to send verification code:', verificationCodeResponse.status());
+                    verificationResponse = {
+                        error: `Failed to send verification code: ${verificationCodeResponse.status()}`,
+                        status: verificationCodeResponse.status(),
+                    };
+                }
+            } catch (verificationError) {
+                console.error('Error sending verification code:', verificationError);
+                verificationResponse = {
+                    error: verificationError.message || 'Failed to send verification code',
+                };
+            }
+        } else {
+            console.warn('No auth token found, skipping verification code send');
+        }
+
+        // Return response with token and phone number for OTP verification
         return res.status(200).json({
             success: true,
             emailUsed: email,
+            phoneNumber: phoneNumber,
             authHeader,
             detectedToken,
             requestHeaders,
             responseJson,
+            verificationResponse,
         });
     } catch (error) {
         console.error('Vercel Playwright register error:', error);
