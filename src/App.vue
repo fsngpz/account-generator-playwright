@@ -96,8 +96,13 @@ async function generateAccount() {
   }
   
   try {
+    // Determine API URL - use environment variable or default to relative path
+    // For development: Use Vercel dev server or deployed URL
+    // For production: Will use relative path /api/register (handled by Vercel)
+    const apiUrl = import.meta.env.VITE_API_URL || '/api/register'
+    
     // Call the registration API (api/register.mjs)
-    const response = await fetch('/api/register', {
+    const response = await fetch(apiUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({

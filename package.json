@@ -8,10 +8,10 @@
   },
   "scripts": {
     "dev": "vite",
+    "dev:vercel": "vercel dev",
     "build": "vite build",
     "preview": "vite preview",
-    "register": "node ./scripts/register.js",
-    "server": "node server/register-api.js"
+    "register": "node ./scripts/register.js"
   },
   "dependencies": {
     "vue": "^3.5.26",
