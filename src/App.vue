@@ -1,6 +1,7 @@
 <script setup>
-import { ref, computed } from 'vue'
-import { saveEmailToFirestore, checkEmailExists } from './firebase/emailService.js'
+import {computed, ref} from 'vue'
+import {checkEmailExists, saveEmailToFirestore, checkPhoneNumberExists, savePhoneNumberToFirestore} from './firebase/emailService.js'
+import {generateMobileNumber} from '../lib/phoneNumber.js'
 
 // Form state
 const email = ref('')
@@ -32,19 +33,19 @@ function validateEmail(value) {
 // Check if email already exists in database
 async function validateEmailExists() {
   emailError.value = ''
-  
+
   if (!email.value || email.value.trim() === '') {
     emailError.value = 'Email cannot be empty'
     return
   }
-  
+
   if (!validateEmail(email.value)) {
     emailError.value = 'Please enter a valid email address'
     return
   }
-  
+
   checkingEmail.value = true
-  
+
   try {
     const exists = await checkEmailExists(email.value.trim())
     if (exists) {
@@ -66,20 +67,20 @@ async function generateAccount() {
   success.value = ''
   registrationResult.value = null
   emailError.value = ''
-  
+
   // Validate email format
   if (!email.value || email.value.trim() === '') {
     emailError.value = 'Email cannot be empty'
     error.value = 'Email cannot be empty'
     return
   }
-  
+
   if (!validateEmail(email.value)) {
     emailError.value = 'Please enter a valid email address'
     error.value = 'Please enter a valid email address'
     return
   }
-  
+
   // Check if email already exists
   loading.value = true
   try {
@@ -94,30 +95,30 @@ async function generateAccount() {
     console.error('Error checking email:', e)
     // Continue with registration even if check fails
   }
-  
+
   try {
     // Determine API URL - use environment variable or default to relative path
     // For development: Use Vercel dev server or deployed URL
     // For production: Will use relative path /api/register (handled by Vercel)
     const apiUrl = import.meta.env.VITE_API_URL || '/api/register'
-    
+
     // Call the registration API (api/register.mjs)
     const response = await fetch(apiUrl, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({
         email: email.value.trim(),
       }),
     })
-    
+
     const data = await response.json()
-    
+
     if (!response.ok) {
       throw new Error(data.error || 'Registration failed')
     }
-    
+
     registrationResult.value = data
-    
+
     // Save email to Firebase Firestore
     try {
       await saveEmailToFirestore(email.value.trim(), {
@@ -130,7 +131,7 @@ async function generateAccount() {
       console.error('Error saving email to Firestore:', firebaseError)
       // You can optionally show a warning to the user
     }
-    
+
     // Move to OTP step
     step.value = 'otp'
     success.value = 'Account created successfully! Please check your email for the OTP code.'
@@ -140,6 +141,34 @@ async function generateAccount() {
   } finally {
     loading.value = false
   }
+}
+
+// Generate a unique phone number that doesn't exist in Firebase
+async function generateUniquePhoneNumber() {
+  let phoneNumber = generateMobileNumber()
+  let attempts = 0
+  const maxAttempts = 50 // Prevent infinite loop
+  
+  while (attempts < maxAttempts) {
+    try {
+      const exists = await checkPhoneNumberExists(phoneNumber)
+      if (!exists) {
+        console.log(`Generated unique phone number: ${phoneNumber} (attempt ${attempts + 1})`)
+        return phoneNumber
+      }
+      // Phone number exists, generate a new one
+      phoneNumber = generateMobileNumber()
+      attempts++
+    } catch (error) {
+      console.error('Error checking phone number existence:', error)
+      // If check fails, return the generated number anyway to avoid blocking
+      return phoneNumber
+    }
+  }
+  
+  // If we couldn't find a unique number after max attempts, return the last generated one
+  console.warn(`Could not find unique phone number after ${maxAttempts} attempts, using: ${phoneNumber}`)
+  return phoneNumber
 }
 
 // OTP confirmation
@@ -160,15 +189,19 @@ async function confirmOTP() {
   loading.value = true
   
   try {
+    // Generate a unique phone number before calling the API
+    const newPhoneNumber = await generateUniquePhoneNumber()
+    console.log('Using new phone number:', newPhoneNumber)
+    
     const apiUrl = import.meta.env.VITE_API_URL || '/api/verify-otp'
     
     const response = await fetch(apiUrl, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({
         otpCode: otp.value.trim(),
         phoneNumber: registrationResult.value.phoneNumber || '0401197580',
-        newPhoneNumber: '0409191199', // You can make this configurable later
+        newPhoneNumber: newPhoneNumber,
         authToken: registrationResult.value.detectedToken,
       }),
     })
@@ -183,6 +216,23 @@ async function confirmOTP() {
       throw new Error(data.verifyPhoneResponse?.error || 'OTP verification failed')
     }
     
+    // Save the new phone number to Firebase after successful verification
+    try {
+      await savePhoneNumberToFirestore(
+        registrationResult.value.emailUsed || email.value.trim(),
+        newPhoneNumber,
+        {
+          verificationResult: data,
+          otpCode: otp.value.trim(),
+          updatedAt: new Date().toISOString()
+        }
+      )
+      console.log('New phone number saved to Firestore successfully')
+    } catch (firebaseError) {
+      // Log error but don't block the success flow
+      console.error('Error saving phone number to Firestore:', firebaseError)
+    }
+    
     // Move to success step
     step.value = 'success'
     success.value = 'Account verified successfully!'
@@ -191,6 +241,7 @@ async function confirmOTP() {
     registrationResult.value = {
       ...registrationResult.value,
       verificationResult: data,
+      newPhoneNumber: newPhoneNumber,
     }
   } catch (e) {
     otpError.value = e.message || 'Invalid OTP code. Please try again.'
@@ -223,20 +274,20 @@ function resetForm() {
 
       <!-- Registration Step -->
       <div v-if="step === 'registration'" class="form-container">
-        <form @submit.prevent="generateAccount" class="form">
+        <form class="form" @submit.prevent="generateAccount">
           <div class="form-group">
             <label for="email">Email Address</label>
             <input
-              id="email"
-              v-model="email"
-              type="email"
-              placeholder="Enter your email"
-              autocomplete="email"
-              required
-              :disabled="loading || checkingEmail"
-              class="input"
-              :class="{ 'input-error': emailError || (email && !validateEmail(email)) }"
-              @blur="validateEmailExists"
+                id="email"
+                v-model="email"
+                :class="{ 'input-error': emailError || (email && !validateEmail(email)) }"
+                :disabled="loading || checkingEmail"
+                autocomplete="email"
+                class="input"
+                placeholder="Enter your email"
+                required
+                type="email"
+                @blur="validateEmailExists"
             />
             <span v-if="emailError" class="error-text">
               {{ emailError }}
@@ -251,9 +302,9 @@ function resetForm() {
           </div>
 
           <button
-            type="submit"
-            :disabled="loading || !isFormValid"
-            class="btn btn-primary"
+              :disabled="loading || !isFormValid"
+              class="btn btn-primary"
+              type="submit"
           >
             <span v-if="loading" class="btn-spinner"></span>
             <span>{{ loading ? 'Generating Account...' : 'Generate Account' }}</span>
@@ -271,21 +322,21 @@ function resetForm() {
           </p>
         </div>
 
-        <form @submit.prevent="confirmOTP" class="otp-form">
+        <form class="otp-form" @submit.prevent="confirmOTP">
           <div class="form-group">
             <label for="otp">Enter OTP Code</label>
             <input
-              id="otp"
-              v-model="otp"
-              type="text"
-              placeholder="Enter 6-digit code"
-              maxlength="6"
-              pattern="[0-9]*"
-              inputmode="numeric"
-              required
-              :disabled="loading"
-              class="input input-otp"
-              autofocus
+                id="otp"
+                v-model="otp"
+                :disabled="loading"
+                autofocus
+                class="input input-otp"
+                inputmode="numeric"
+                maxlength="6"
+                pattern="[0-9]*"
+                placeholder="Enter 6-digit code"
+                required
+                type="text"
             />
             <span v-if="otpError" class="error-text">{{ otpError }}</span>
           </div>
@@ -295,18 +346,18 @@ function resetForm() {
           </div>
 
           <button
-            type="submit"
-            :disabled="loading || !otp || otp.length < 4"
-            class="btn btn-primary"
+              :disabled="loading || !otp || otp.length < 4"
+              class="btn btn-primary"
+              type="submit"
           >
             <span v-if="loading" class="btn-spinner"></span>
             <span>{{ loading ? 'Verifying...' : 'Confirm OTP' }}</span>
           </button>
 
           <button
-            type="button"
-            @click="step = 'registration'"
-            class="btn btn-link"
+              class="btn btn-link"
+              type="button"
+              @click="step = 'registration'"
           >
             ← Back to Registration
           </button>
@@ -318,7 +369,7 @@ function resetForm() {
         <div class="success-icon large">✓</div>
         <h2>Account Created Successfully!</h2>
         <p class="success-message">Your account has been verified and is ready to use.</p>
-        
+
         <div v-if="registrationResult" class="account-details">
           <div class="detail-item">
             <span class="detail-label">Email:</span>
@@ -330,7 +381,7 @@ function resetForm() {
           </div>
         </div>
 
-        <button @click="resetForm" class="btn btn-primary">
+        <button class="btn btn-primary" @click="resetForm">
           Create Another Account
         </button>
       </div>
@@ -509,7 +560,9 @@ label {
 }
 
 @keyframes spin {
-  to { transform: rotate(360deg); }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .alert {

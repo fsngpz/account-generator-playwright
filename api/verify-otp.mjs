@@ -26,7 +26,7 @@ export default async function handler(req, res) {
     // Required fields
     const otpCode = body.otpCode;
     const phoneNumber = body.phoneNumber;
-    const newPhoneNumber = body.newPhoneNumber || '0409191199'; // Default new phone number
+    const newPhoneNumber = body.newPhoneNumber;
     const authToken = body.authToken; // Token from registration response
 
     if (!otpCode) {
