@@ -1,4 +1,5 @@
 import {chromium} from 'playwright-core';
+import {generatePassword} from '../lib/passwordGenerator.js';
 
 // Vercel Node.js Serverless Function (ESM)
 // Endpoint: /api/register
@@ -37,7 +38,8 @@ export default async function handler(req, res) {
     const lastName = body.lastName || 'Doe';
     const email =
         body.email || `john.doe+${Date.now()}@example.com`;
-    const password = body.password || 'SecurePassword123!';
+    // Generate a secure password if not provided
+    const password = body.password || generatePassword({ length: 16 });
     const phoneNumber = body.phoneNumber || '0401197580'; // Default phone number for verification
 
     let browser;
@@ -213,11 +215,12 @@ export default async function handler(req, res) {
             console.warn('No auth token found, skipping verification code send');
         }
 
-        // Return response with token and phone number for OTP verification
+        // Return response with token, phone number, and password for OTP verification
         return res.status(200).json({
             success: true,
             emailUsed: email,
             phoneNumber: phoneNumber,
+            password: password, // Include generated password in response
             authHeader,
             detectedToken,
             requestHeaders,

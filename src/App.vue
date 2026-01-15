@@ -119,13 +119,14 @@ async function generateAccount() {
 
     registrationResult.value = data
 
-    // Save email to Firebase Firestore
+    // Save email and password to Firebase Firestore
     try {
       await saveEmailToFirestore(email.value.trim(), {
+        password: data.password, // Save generated password
         registrationResult: data,
         timestamp: new Date().toISOString()
       })
-      console.log('Email saved to Firestore successfully')
+      console.log('Email and password saved to Firestore successfully')
     } catch (firebaseError) {
       // Log error but don't block the registration flow
       console.error('Error saving email to Firestore:', firebaseError)
@@ -222,6 +223,7 @@ async function confirmOTP() {
         registrationResult.value.emailUsed || email.value.trim(),
         newPhoneNumber,
         {
+          password: registrationResult.value.password, // Include password
           verificationResult: data,
           otpCode: otp.value.trim(),
           updatedAt: new Date().toISOString()
@@ -375,9 +377,13 @@ function resetForm() {
             <span class="detail-label">Email:</span>
             <span class="detail-value">{{ registrationResult.emailUsed }}</span>
           </div>
-          <div v-if="registrationResult.detectedToken" class="detail-item">
-            <span class="detail-label">Token:</span>
-            <span class="detail-value token">{{ registrationResult.detectedToken.substring(0, 20) }}...</span>
+          <div v-if="registrationResult.password" class="detail-item">
+            <span class="detail-label">Password:</span>
+            <span class="detail-value password">{{ registrationResult.password }}</span>
+          </div>
+          <div v-if="registrationResult.newPhoneNumber" class="detail-item">
+            <span class="detail-label">Phone Number:</span>
+            <span class="detail-value">{{ registrationResult.newPhoneNumber }}</span>
           </div>
         </div>
 
@@ -686,10 +692,13 @@ label {
   max-width: 60%;
 }
 
-.detail-value.token {
+.detail-value.password {
   font-family: 'Courier New', monospace;
   font-size: 0.875rem;
   color: #667eea;
+  font-weight: 600;
+  user-select: all;
+  cursor: text;
 }
 
 /* Responsive Design */
