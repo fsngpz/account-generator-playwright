@@ -39,8 +39,8 @@ export default async function handler(req, res) {
     const email =
         body.email || `john.doe+${Date.now()}@example.com`;
     // Generate a secure password if not provided
-    const password = body.password || generatePassword({ length: 16 });
-    const phoneNumber = body.phoneNumber || '0401197580'; // Default phone number for verification
+    const password = body.password || generatePassword({length: 16});
+    const phoneNumber = body.phoneNumber; // Default phone number for verification
 
     let browser;
 

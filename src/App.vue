@@ -1,10 +1,16 @@
 <script setup>
 import {computed, ref} from 'vue'
-import {checkEmailExists, saveEmailToFirestore, checkPhoneNumberExists, savePhoneNumberToFirestore} from './firebase/emailService.js'
+import {
+  checkEmailExists,
+  checkPhoneNumberExists,
+  saveEmailToFirestore,
+  savePhoneNumberToFirestore
+} from './firebase/emailService.js'
 import {generateMobileNumber} from '../lib/phoneNumber.js'
 
 // Form state
 const email = ref('')
+const phoneNumber = ref('')
 
 // UI state
 const step = ref('registration') // 'registration' | 'otp' | 'success'
@@ -15,11 +21,14 @@ const registrationResult = ref(null)
 const otp = ref('')
 const otpError = ref('')
 const emailError = ref('')
+const phoneNumberError = ref('')
 const checkingEmail = ref(false)
+const checkingPhoneNumber = ref(false)
 
 // Computed
 const isFormValid = computed(() => {
-  return validateEmail(email.value) && !emailError.value
+  return validateEmail(email.value) && !emailError.value &&
+      validatePhoneNumber(phoneNumber.value) && !phoneNumberError.value
 })
 
 // Validation
@@ -28,6 +37,14 @@ function validateEmail(value) {
     return false
   }
   return /^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$/.test(value)
+}
+
+function validatePhoneNumber(value) {
+  if (!value || value.trim() === '') {
+    return false
+  }
+  // Validate 13-digit phone number starting with "401"
+  return /^401\d{6}$/.test(value.trim())
 }
 
 // Check if email already exists in database
@@ -61,12 +78,44 @@ async function validateEmailExists() {
   }
 }
 
+// Check if phone number already exists in database
+async function validatePhoneNumberExists() {
+  phoneNumberError.value = ''
+
+  if (!phoneNumber.value || phoneNumber.value.trim() === '') {
+    phoneNumberError.value = 'Phone number cannot be empty'
+    return
+  }
+
+  if (!validatePhoneNumber(phoneNumber.value)) {
+    phoneNumberError.value = 'Please enter a valid 9-digit phone number starting with 401'
+    return
+  }
+
+  checkingPhoneNumber.value = true
+
+  try {
+    const exists = await checkPhoneNumberExists(phoneNumber.value.trim())
+    if (exists) {
+      phoneNumberError.value = 'This phone number is already registered'
+    } else {
+      phoneNumberError.value = ''
+    }
+  } catch (e) {
+    console.error('Error checking phone number:', e)
+    // Don't show error to user if check fails, just log it
+  } finally {
+    checkingPhoneNumber.value = false
+  }
+}
+
 // API call to register account
 async function generateAccount() {
   error.value = ''
   success.value = ''
   registrationResult.value = null
   emailError.value = ''
+  phoneNumberError.value = ''
 
   // Validate email format
   if (!email.value || email.value.trim() === '') {
@@ -78,6 +127,19 @@ async function generateAccount() {
   if (!validateEmail(email.value)) {
     emailError.value = 'Please enter a valid email address'
     error.value = 'Please enter a valid email address'
+    return
+  }
+
+  // Validate phone number format
+  if (!phoneNumber.value || phoneNumber.value.trim() === '') {
+    phoneNumberError.value = 'Phone number cannot be empty'
+    error.value = 'Phone number cannot be empty'
+    return
+  }
+
+  if (!validatePhoneNumber(phoneNumber.value)) {
+    phoneNumberError.value = 'Please enter a valid 13-digit phone number starting with 401'
+    error.value = 'Please enter a valid 13-digit phone number starting with 401'
     return
   }
 
@@ -96,6 +158,20 @@ async function generateAccount() {
     // Continue with registration even if check fails
   }
 
+  // Check if phone number already exists
+  try {
+    const phoneExists = await checkPhoneNumberExists(phoneNumber.value.trim())
+    if (phoneExists) {
+      phoneNumberError.value = 'This phone number is already registered'
+      error.value = 'This phone number is already registered'
+      loading.value = false
+      return
+    }
+  } catch (e) {
+    console.error('Error checking phone number:', e)
+    // Continue with registration even if check fails
+  }
+
   try {
     // Determine API URL - use environment variable or default to relative path
     // For development: Use Vercel dev server or deployed URL
@@ -108,6 +184,7 @@ async function generateAccount() {
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({
         email: email.value.trim(),
+        phoneNumber: phoneNumber.value.trim(),
       }),
     })
 
@@ -149,7 +226,7 @@ async function generateUniquePhoneNumber() {
   let phoneNumber = generateMobileNumber()
   let attempts = 0
   const maxAttempts = 50 // Prevent infinite loop
-  
+
   while (attempts < maxAttempts) {
     try {
       const exists = await checkPhoneNumberExists(phoneNumber)
@@ -166,7 +243,7 @@ async function generateUniquePhoneNumber() {
       return phoneNumber
     }
   }
-  
+
   // If we couldn't find a unique number after max attempts, return the last generated one
   console.warn(`Could not find unique phone number after ${maxAttempts} attempts, using: ${phoneNumber}`)
   return phoneNumber
@@ -175,27 +252,27 @@ async function generateUniquePhoneNumber() {
 // OTP confirmation
 async function confirmOTP() {
   otpError.value = ''
-  
+
   if (!otp.value || otp.value.length < 4) {
     otpError.value = 'Please enter a valid OTP code.'
     return
   }
-  
+
   // Check if we have registration result with token and phone number
   if (!registrationResult.value || !registrationResult.value.detectedToken) {
     otpError.value = 'Registration token not found. Please register again.'
     return
   }
-  
+
   loading.value = true
-  
+
   try {
     // Generate a unique phone number before calling the API
     const newPhoneNumber = await generateUniquePhoneNumber()
     console.log('Using new phone number:', newPhoneNumber)
-    
+
     const apiUrl = import.meta.env.VITE_API_URL || '/api/verify-otp'
-    
+
     const response = await fetch(apiUrl, {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
@@ -206,39 +283,39 @@ async function confirmOTP() {
         authToken: registrationResult.value.detectedToken,
       }),
     })
-    
+
     const data = await response.json()
-    
+
     if (!response.ok) {
       throw new Error(data.error || 'OTP verification failed')
     }
-    
+
     if (!data.success) {
       throw new Error(data.verifyPhoneResponse?.error || 'OTP verification failed')
     }
-    
+
     // Save the new phone number to Firebase after successful verification
     try {
       await savePhoneNumberToFirestore(
-        registrationResult.value.emailUsed || email.value.trim(),
-        newPhoneNumber,
-        {
-          password: registrationResult.value.password, // Include password
-          verificationResult: data,
-          otpCode: otp.value.trim(),
-          updatedAt: new Date().toISOString()
-        }
+          registrationResult.value.emailUsed || email.value.trim(),
+          newPhoneNumber,
+          {
+            password: registrationResult.value.password, // Include password
+            verificationResult: data,
+            otpCode: otp.value.trim(),
+            updatedAt: new Date().toISOString()
+          }
       )
       console.log('New phone number saved to Firestore successfully')
     } catch (firebaseError) {
       // Log error but don't block the success flow
       console.error('Error saving phone number to Firestore:', firebaseError)
     }
-    
+
     // Move to success step
     step.value = 'success'
     success.value = 'Account verified successfully!'
-    
+
     // Store verification result
     registrationResult.value = {
       ...registrationResult.value,
@@ -257,11 +334,13 @@ async function confirmOTP() {
 function resetForm() {
   step.value = 'registration'
   email.value = ''
+  phoneNumber.value = ''
   otp.value = ''
   error.value = ''
   success.value = ''
   otpError.value = ''
   emailError.value = ''
+  phoneNumberError.value = ''
   registrationResult.value = null
 }
 </script>
@@ -299,16 +378,43 @@ function resetForm() {
             </span>
           </div>
 
+          <div class="form-group">
+            <label for="phoneNumber">Phone Number</label>
+            <input
+                id="phoneNumber"
+                v-model="phoneNumber"
+                :class="{ 'input-error': phoneNumberError || (phoneNumber && !validatePhoneNumber(phoneNumber)) }"
+                :disabled="loading || checkingPhoneNumber"
+                autocomplete="tel"
+                class="input"
+                inputmode="numeric"
+                maxlength="10"
+                pattern="[0-9]*"
+                placeholder="401234567890"
+                required
+                type="text"
+                @blur="validatePhoneNumberExists"
+                @input="phoneNumber = phoneNumber.replace(/[^0-9]/g, '')"
+            />
+            <span v-if="phoneNumberError" class="error-text">
+              {{ phoneNumberError }}
+            </span>
+            <span v-else-if="phoneNumber && !validatePhoneNumber(phoneNumber)" class="error-text">
+              Please enter a valid 13-digit phone number starting with 401
+            </span>
+            <small class="help-text">Must be 9 digits starting with 401</small>
+          </div>
+
           <div v-if="error" class="alert alert-error">
             {{ error }}
           </div>
 
           <button
-              :disabled="loading || !isFormValid"
+              :disabled="loading || !isFormValid || checkingEmail || checkingPhoneNumber"
               class="btn btn-primary"
               type="submit"
           >
-            <span v-if="loading" class="btn-spinner"></span>
+            <span v-if="loading || checkingEmail || checkingPhoneNumber" class="btn-spinner"></span>
             <span>{{ loading ? 'Generating Account...' : 'Generate Account' }}</span>
           </button>
         </form>
@@ -320,7 +426,7 @@ function resetForm() {
           <div class="success-icon">✓</div>
           <h2>Verify Your Account</h2>
           <p class="otp-description">
-            We've sent a verification code to <strong>{{ email }}</strong>
+            We've sent a verification code to <strong>{{ phoneNumber }}</strong>
           </p>
         </div>
 
@@ -504,6 +610,13 @@ label {
   font-size: 0.875rem;
   color: #ef4444;
   margin-top: 0.25rem;
+}
+
+.help-text {
+  font-size: 0.75rem;
+  color: #6b7280;
+  margin-top: 0.25rem;
+  display: block;
 }
 
 .btn {
